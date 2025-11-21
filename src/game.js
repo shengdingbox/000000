@@ -15,6 +15,23 @@ const CONFIG = {
         PAUSED: 'paused',
         GAME_OVER: 'game_over'
     },
+    PLAYER: {
+        WIDTH: 40,
+        HEIGHT: 40,
+        SPEED: 5,
+        FIRE_RATE: 250
+    },
+    ENEMY: {
+        WIDTH: 35,
+        HEIGHT: 35,
+        SPEED: 2,
+        SPAWN_RATE: 1500
+    },
+    BULLET: {
+        WIDTH: 4,
+        HEIGHT: 12,
+        SPEED: 7
+    },
     FPS: 60,
     DEBUG: true
 };
@@ -171,6 +188,165 @@ class AssetLoader {
     }
 }
 
+// Player class
+class Player {
+    constructor(canvasWidth, canvasHeight) {
+        this.canvasWidth = canvasWidth;
+        this.canvasHeight = canvasHeight;
+        this.width = CONFIG.PLAYER.WIDTH;
+        this.height = CONFIG.PLAYER.HEIGHT;
+        this.x = canvasWidth / 2 - this.width / 2;
+        this.y = canvasHeight - this.height - 20;
+        this.speed = CONFIG.PLAYER.SPEED;
+        this.lastFireTime = 0;
+        this.lives = 3;
+        this.score = 0;
+    }
+
+    update(inputHandler, currentTime) {
+        if (inputHandler.isKeyPressed('ArrowLeft') || inputHandler.isKeyPressed('a')) {
+            this.x -= this.speed;
+        }
+        if (inputHandler.isKeyPressed('ArrowRight') || inputHandler.isKeyPressed('d')) {
+            this.x += this.speed;
+        }
+
+        this.x = Math.max(0, Math.min(this.x, this.canvasWidth - this.width));
+    }
+
+    canFire(currentTime) {
+        return currentTime - this.lastFireTime >= CONFIG.PLAYER.FIRE_RATE;
+    }
+
+    fire(currentTime) {
+        this.lastFireTime = currentTime;
+    }
+
+    hit() {
+        this.lives--;
+        return this.lives <= 0;
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = '#00ff88';
+        ctx.beginPath();
+        ctx.moveTo(this.x + this.width / 2, this.y);
+        ctx.lineTo(this.x, this.y + this.height);
+        ctx.lineTo(this.x + this.width, this.y + this.height);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    getCenterX() {
+        return this.x + this.width / 2;
+    }
+
+    getCenterY() {
+        return this.y + this.height / 2;
+    }
+
+    getBounds() {
+        return {
+            x: this.x,
+            y: this.y,
+            width: this.width,
+            height: this.height
+        };
+    }
+}
+
+// Enemy class
+class Enemy {
+    constructor(canvasWidth, canvasHeight) {
+        this.canvasWidth = canvasWidth;
+        this.canvasHeight = canvasHeight;
+        this.width = CONFIG.ENEMY.WIDTH;
+        this.height = CONFIG.ENEMY.HEIGHT;
+        this.x = Math.random() * (canvasWidth - this.width);
+        this.y = -this.height;
+        this.speed = CONFIG.ENEMY.SPEED + Math.random() * 2;
+        this.toRemove = false;
+    }
+
+    update() {
+        this.y += this.speed;
+        
+        if (this.y > this.canvasHeight) {
+            this.toRemove = true;
+        }
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = '#ff4444';
+        ctx.beginPath();
+        ctx.moveTo(this.x + this.width / 2, this.y + this.height);
+        ctx.lineTo(this.x, this.y);
+        ctx.lineTo(this.x + this.width, this.y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = '#ff8888';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    getBounds() {
+        return {
+            x: this.x,
+            y: this.y,
+            width: this.width,
+            height: this.height
+        };
+    }
+}
+
+// Bullet class
+class Bullet {
+    constructor(x, y, isPlayerBullet = true) {
+        this.width = CONFIG.BULLET.WIDTH;
+        this.height = CONFIG.BULLET.HEIGHT;
+        this.x = x - this.width / 2;
+        this.y = y;
+        this.speed = CONFIG.BULLET.SPEED * (isPlayerBullet ? -1 : 1);
+        this.isPlayerBullet = isPlayerBullet;
+        this.toRemove = false;
+    }
+
+    update() {
+        this.y += this.speed;
+        
+        if (this.y < -this.height || this.y > 650) {
+            this.toRemove = true;
+        }
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = this.isPlayerBullet ? '#ffff00' : '#ff00ff';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+
+    getBounds() {
+        return {
+            x: this.x,
+            y: this.y,
+            width: this.width,
+            height: this.height
+        };
+    }
+}
+
+// Collision detection helper
+function checkCollision(bounds1, bounds2) {
+    return bounds1.x < bounds2.x + bounds2.width &&
+           bounds1.x + bounds1.width > bounds2.x &&
+           bounds1.y < bounds2.y + bounds2.height &&
+           bounds1.y + bounds1.height > bounds2.y;
+}
+
 // Main game class
 class Game {
     constructor() {
@@ -190,6 +366,12 @@ class Game {
         this.loadingScreen = null;
         this.startScreen = null;
         this.startButton = null;
+        
+        // Game entities
+        this.player = null;
+        this.enemies = [];
+        this.bullets = [];
+        this.lastEnemySpawnTime = 0;
         
         this.init();
     }
@@ -296,6 +478,11 @@ class Game {
             this.startScreen.style.display = 'none';
         }
         
+        this.player = new Player(this.canvas.width, this.canvas.height);
+        this.enemies = [];
+        this.bullets = [];
+        this.lastEnemySpawnTime = performance.now();
+        
         this.gameState.setState(CONFIG.GAME_STATES.PLAYING);
         this.gameLoop();
         
@@ -335,10 +522,63 @@ class Game {
     }
 
     update(deltaTime) {
-        // Game update logic will go here
-        // For now, just handle basic input
         if (this.inputHandler.isKeyPressed('Escape')) {
             this.gameState.setState(CONFIG.GAME_STATES.PAUSED);
+        }
+
+        const currentTime = performance.now();
+
+        if (!this.player) return;
+
+        this.player.update(this.inputHandler, currentTime);
+
+        if ((this.inputHandler.isKeyPressed(' ') || this.inputHandler.isKeyPressed('w')) 
+            && this.player.canFire(currentTime)) {
+            this.bullets.push(new Bullet(this.player.getCenterX(), this.player.y));
+            this.player.fire(currentTime);
+        }
+
+        if (currentTime - this.lastEnemySpawnTime >= CONFIG.ENEMY.SPAWN_RATE) {
+            this.enemies.push(new Enemy(this.canvas.width, this.canvas.height));
+            this.lastEnemySpawnTime = currentTime;
+        }
+
+        this.enemies.forEach(enemy => enemy.update());
+
+        this.bullets.forEach(bullet => bullet.update());
+
+        this.checkCollisions();
+
+        this.enemies = this.enemies.filter(enemy => !enemy.toRemove);
+        this.bullets = this.bullets.filter(bullet => !bullet.toRemove);
+
+        if (this.player.lives <= 0) {
+            this.gameState.setState(CONFIG.GAME_STATES.GAME_OVER);
+        }
+    }
+
+    checkCollisions() {
+        for (let i = this.bullets.length - 1; i >= 0; i--) {
+            const bullet = this.bullets[i];
+            if (!bullet.isPlayerBullet) continue;
+
+            for (let j = this.enemies.length - 1; j >= 0; j--) {
+                const enemy = this.enemies[j];
+                if (checkCollision(bullet.getBounds(), enemy.getBounds())) {
+                    bullet.toRemove = true;
+                    enemy.toRemove = true;
+                    this.player.score += 10;
+                    break;
+                }
+            }
+        }
+
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const enemy = this.enemies[i];
+            if (checkCollision(enemy.getBounds(), this.player.getBounds())) {
+                enemy.toRemove = true;
+                this.player.hit();
+            }
         }
     }
 
@@ -378,23 +618,48 @@ class Game {
     }
 
     drawGameElements() {
-        // Game elements will be drawn here
-        // For now, just draw a placeholder
-        this.ctx.fillStyle = '#00ff88';
-        this.ctx.font = '20px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('Game Running', this.canvas.width / 2, this.canvas.height / 2);
+        if (!this.player) return;
+
+        this.player.draw(this.ctx);
+
+        this.enemies.forEach(enemy => enemy.draw(this.ctx));
+
+        this.bullets.forEach(bullet => bullet.draw(this.ctx));
     }
 
     drawUI() {
-        // Draw FPS counter if debug mode is on
+        if (this.player) {
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '20px Arial';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(`Score: ${this.player.score}`, 10, 30);
+            this.ctx.fillText(`Lives: ${this.player.lives}`, 10, 60);
+        }
+
         if (CONFIG.DEBUG) {
             this.ctx.fillStyle = '#00ff88';
             this.ctx.font = '14px monospace';
             this.ctx.textAlign = 'left';
-            this.ctx.fillText(`FPS: ${this.fps}`, 10, 20);
-            this.ctx.fillText(`State: ${this.gameState.getState()}`, 10, 40);
-            this.ctx.fillText(`Canvas: ${this.canvas.width}x${this.canvas.height}`, 10, 60);
+            this.ctx.fillText(`FPS: ${this.fps}`, 10, 90);
+            if (this.player) {
+                this.ctx.fillText(`Enemies: ${this.enemies.length}`, 10, 110);
+                this.ctx.fillText(`Bullets: ${this.bullets.length}`, 10, 130);
+            }
+        }
+
+        if (this.gameState.getState() === CONFIG.GAME_STATES.GAME_OVER) {
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            this.ctx.fillStyle = '#ff4444';
+            this.ctx.font = '48px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2 - 40);
+            
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '24px Arial';
+            this.ctx.fillText(`Final Score: ${this.player ? this.player.score : 0}`, this.canvas.width / 2, this.canvas.height / 2 + 20);
+            this.ctx.fillText('Refresh to Play Again', this.canvas.width / 2, this.canvas.height / 2 + 60);
         }
     }
 }
