@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>HTML5 Canvas Shooter</title>
+    <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div class="loading-screen" id="loadingScreen">
+            <h1>Loading...</h1>
+            <div class="loading-progress">0%</div>
+        </div>
+        <div class="start-screen" id="startScreen" style="display: none;">
+            <h1>Space Shooter</h1>
+            <button id="startButton">Start Game</button>
+        </div>
+    </div>
+    <script src="src/game.js"></script>
+</body>
+</html>
