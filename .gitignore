@@ -70,3 +70,9 @@ node_modules/
 # Package manager files
 package-lock.json
 yarn.lock
+
+# Test files
+test.html
+test_game.js
+simple_test.js
+server.log
